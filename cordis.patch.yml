@@ -1,0 +1,14 @@
+# Bundle patch for the molecule viewer plugin.
+#
+# Declared by the `dsh.bundle.patch` manifest field: inserts the plugin row
+# into any profile that lists @dsh-plugins/dsh-molecule-viewer in its
+# `dsh.profile.bundles`. The single row loads the package's host-half apply
+# (registers the view_molecule tool). The package also declares dsh.client,
+# which the web bundle discovery picks up automatically for the 3Dmol.js
+# renderer — no separate row needed for the client half.
+
+- insert:
+    - id: molecule-viewer
+      name: '@dsh-plugins/dsh-molecule-viewer'
+      config:
+        defaultStyle: stick

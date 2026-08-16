@@ -1,0 +1,64 @@
+{
+  "name": "@dsh-plugins/dsh-molecule-viewer",
+  "description": "Interactive 3D molecule viewer for DeepSeek Harness: view PDB/SDF/MOL2/MOL structures with 3Dmol.js",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && esbuild src/client/index.ts --bundle --format=esm --outfile=lib/client.js --external:react --external:react/jsx-runtime --external:@deepseek-ai/dsh-client-runtime/client --external:@deepseek-ai/dsh-client-ui-conversation/client --loader:.css=text",
+    "build:host": "tsc",
+    "build:client": "esbuild src/client/index.ts --bundle --format=esm --outfile=lib/client.js --external:react --external:react/jsx-runtime --external:@deepseek-ai/dsh-client-runtime/client --external:@deepseek-ai/dsh-client-ui-conversation/client --loader:.css=text",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-invariants": "*",
+    "@deepseek-ai/dsh-client-runtime": "*",
+    "@deepseek-ai/dsh-client-ui-conversation": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "dependencies": {
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "@types/react": "^18.3.1",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.7.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  }
+}
