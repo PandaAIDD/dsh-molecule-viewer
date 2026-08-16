@@ -61,5 +61,21 @@
       ],
       "platform": "web"
     }
-  }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "deepseek",
+    "molecule-viewer",
+    "3dmol",
+    "visualization",
+    "pdb",
+    "chemistry"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PandaAIDD/dsh-molecule-viewer.git"
+  },
+  "homepage": "https://github.com/PandaAIDD/dsh-molecule-viewer#readme"
 }
