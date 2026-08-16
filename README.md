@@ -12,7 +12,7 @@ DSH（DeepSeek Harness）分子结构查看器插件：传入分子文件路径�
 ## 安装
 
 ```bash
-dsh plugin --profile web add git+https://github.com/<your-user>/dsh-molecule-viewer.git
+dsh plugin --profile web add git+https://github.com/PandaAIDD/dsh-molecule-viewer.git
 ```
 
 重启生效：
