@@ -94,6 +94,48 @@ function btnStyle(active: boolean, disabled?: boolean): CSSProperties {
   return { ...S.btn, ...(active ? S.btnActive : {}), ...(disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }
 }
 
+/**
+ * Wait until the container has a non-zero layout box.
+ *
+ * Creating a 3Dmol viewer on a zero-size element sizes its WebGL canvas to
+ * zero, making the framebuffer incomplete (`GL_INVALID_FRAMEBUFFER_OPERATION:
+ * glClear: Attachment has zero size` on every frame) and the canvas stays
+ * blank. The chat list mounts nodes before layout (and replayed sessions may
+ * sit in collapsed/hidden ancestors), so creation must wait for a real box.
+ *
+ * A synchronous check first (layout is usually done by effect time), then a
+ * ResizeObserver (fires on the 0 → non-zero transition) plus a rAF poll as
+ * belt-and-braces. Rejects when the component unmounts while waiting.
+ */
+function awaitLayoutBox(el: HTMLElement, isCancelled: () => boolean): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let observer: ResizeObserver | undefined
+    let raf = 0
+    const settle = (err?: Error): void => {
+      if (raf !== 0) cancelAnimationFrame(raf)
+      observer?.disconnect()
+      if (err === undefined) resolve()
+      else reject(err)
+    }
+    const check = (): boolean => {
+      if (isCancelled()) {
+        settle(new Error('molecule viewer unmounted before its container was laid out'))
+        return true
+      }
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        settle()
+        return true
+      }
+      return false
+    }
+    if (check()) return
+    observer = new ResizeObserver(() => { check() })
+    observer.observe(el)
+    const tick = (): void => { if (!check()) raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+  })
+}
+
 export function MoleculeView({ data, format, name, atomCount, initialStyle }: MoleculeViewProps): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,27 +148,44 @@ export function MoleculeView({ data, format, name, atomCount, initialStyle }: Mo
 
   // Create viewer and parse molecule on mount / data change.
   useEffect(() => {
-    if (containerRef.current === null) return
+    const container = containerRef.current
+    if (container === null) return
     setStatus('loading')
     let cancelled = false
+    let resizeObserver: ResizeObserver | undefined
     void (async (): Promise<void> => {
       try {
         const m = await load3Dmol()
         if (cancelled) return
+        // Wait for a non-zero layout box: a zero-size container produces an
+        // incomplete WebGL framebuffer and a permanently blank canvas.
+        await awaitLayoutBox(container, () => cancelled)
+        if (cancelled) return
         if (viewerRef.current !== null) {
           try { viewerRef.current.clear() } catch { /* replaced below anyway */ }
+          viewerRef.current = null
         }
-        const v = m.createViewer(containerRef.current, { backgroundColor: bg, antialias: true })
+        const v = m.createViewer(container, { backgroundColor: bg, antialias: true })
         viewerRef.current = v
         v.addModel(data, format)
         applyStyle(v, style, colorMode)
         v.zoomTo(); v.render(); v.zoom(1.2, 800)
         if (!cancelled) setStatus('ready')
+        // Keep the canvas matched to the container box (chat pane resizes do
+        // not always fire window resize, which is all 3Dmol hooks itself).
+        resizeObserver = new ResizeObserver(() => {
+          if (container.clientWidth === 0 || container.clientHeight === 0) return
+          try { v.resize(); v.render() } catch { /* transient — next resize retries */ }
+        })
+        resizeObserver.observe(container)
       } catch (e) {
         if (!cancelled) { setStatus('error'); setErrorMsg(e instanceof Error ? e.message : String(e)) }
       }
     })()
-    return (): void => { cancelled = true }
+    return (): void => {
+      cancelled = true
+      resizeObserver?.disconnect()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, format])
 

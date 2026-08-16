@@ -8,6 +8,7 @@ DSH（DeepSeek Harness）分子结构查看器插件：传入分子文件路径�
 - 📁 **路径优先**：直接传文件路径，工具在服务端读取——Windows（`D:\dir\x.pdb`）、WSL（`/mnt/d/dir/x.pdb`）和 `~/` 写法都能自动识别互转
 - 🖱️ **交互式查看器**：旋转、缩放，实时切换 cartoon / stick / line / sphere 样式、背景色与分子着色
 - ⚡ **轻量解析**：Host 侧只做原子计数与校验，真正的解析渲染交给浏览器端 3Dmol.js
+- 📦 **本地打包 3Dmol.js**：`vendor/3Dmol-min.cjs`（2.4.2）在构建时打进 client bundle —— 无 CDN 运行时请求，加载快、可离线、不受浏览器跟踪防护影响
 
 ## 安装
 
@@ -85,7 +86,8 @@ dsh-molecule-viewer/
 │       ├── index.ts      # Client 半：Conversation Node + slot renderer
 │       ├── MoleculeView.tsx    # 3Dmol.js 交互式 3D 容器
 │       ├── molecule-definition.ts  # 事件匹配定义
-│       └── threeDmol.ts  # 3Dmol.js CDN 动态加载
+│       └── threeDmol.ts  # 3Dmol.js 本地打包加载（vendor，无 CDN）
+├── vendor/                # 本地打包的 3Dmol.js 2.4.2（.cjs — UMD 构建）
 ├── lib/                  # 构建产物（提交到仓库）
 └── README.md
 ```
