@@ -1,20 +1,21 @@
 /**
  * Model-facing molecule viewer tool.
  *
- * Registers `view_molecule`: the model passes molecular file content
- * (PDB/SDF/MOL2/MOL), the tool validates and counts atoms, appends a
- * `molecule/view` session event carrying the raw data + a stable id, and
- * returns structured metadata. The client-half Conversation Node binds to
- * the same `viewerEventId` and renders 3Dmol.js.
+ * Registers `view_molecule`: the model passes a molecular file path or raw
+ * content (PDB/SDF/MOL2/MOL), the tool validates and counts atoms, and
+ * returns structured metadata. The UI payload (raw data + initial style)
+ * rides the `tool/result` event's `presentationMeta` projection, which every
+ * harness build persists and replays, and the client-half renders it through
+ * the keyed `tool.call.toolview` slot — no custom session event type, so
+ * session history reloads on stock harness installs.
  *
- * Single-event Context (start = terminal): one event per call, matched by
- * `viewerEventId` in the client definition.
  * @module @dsh-plugins/dsh-molecule-viewer
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import type { MoleculeStyle } from './types.ts';
-export type { MoleculeFormat, MoleculeStyle, MoleculeViewEventData, ViewMoleculeArgs, ViewMoleculeResult, } from './types.ts';
+import { type MoleculeStyle } from './types.ts';
+export type { MoleculeFormat, MoleculeStyle, MoleculeViewMeta, ViewMoleculeArgs, ViewMoleculeResult, } from './types.ts';
+export { MOLECULE_META_KIND } from './types.ts';
 export declare const name = "tool-molecule-viewer";
 export declare const inject: string[];
 /** Plugin configuration. */

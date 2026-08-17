@@ -1,32 +1,36 @@
 /**
  * Model-facing molecule viewer tool.
  *
- * Registers `view_molecule`: the model passes molecular file content
- * (PDB/SDF/MOL2/MOL), the tool validates and counts atoms, appends a
- * `molecule/view` session event carrying the raw data + a stable id, and
- * returns structured metadata. The client-half Conversation Node binds to
- * the same `viewerEventId` and renders 3Dmol.js.
+ * Registers `view_molecule`: the model passes a molecular file path or raw
+ * content (PDB/SDF/MOL2/MOL), the tool validates and counts atoms, and
+ * returns structured metadata. The UI payload (raw data + initial style)
+ * rides the `tool/result` event's `presentationMeta` projection, which every
+ * harness build persists and replays, and the client-half renders it through
+ * the keyed `tool.call.toolview` slot — no custom session event type, so
+ * session history reloads on stock harness installs.
  *
- * Single-event Context (start = terminal): one event per call, matched by
- * `viewerEventId` in the client definition.
  * @module @dsh-plugins/dsh-molecule-viewer
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
 import { basename } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolResultView } from '@deepseek-ai/dsh-tools'
 import { parseMolecule } from './parser.ts'
-import type { MoleculeFormat, MoleculeStyle, ViewMoleculeArgs, ViewMoleculeResult } from './types.ts'
+import {
+  MOLECULE_META_KIND,
+  type MoleculeFormat, type MoleculeStyle, type MoleculeViewMeta,
+  type ViewMoleculeArgs, type ViewMoleculeResult,
+} from './types.ts'
 
 // Re-export shared types so consumers (and the client half) import from one place.
 export type {
-  MoleculeFormat, MoleculeStyle, MoleculeViewEventData,
+  MoleculeFormat, MoleculeStyle, MoleculeViewMeta,
   ViewMoleculeArgs, ViewMoleculeResult,
 } from './types.ts'
+export { MOLECULE_META_KIND } from './types.ts'
 
 export const name = 'tool-molecule-viewer'
 export const inject = ['tools']
@@ -39,6 +43,14 @@ const STYLES: readonly MoleculeStyle[] = ['stick', 'line', 'sphere', 'cartoon']
 
 /** Defensive read cap: molecular files are KB-to-MB scale; anything bigger is a mistake. */
 const MAX_FILE_BYTES = 50 * 1024 * 1024
+
+/**
+ * Cap on molecular content inlined into the persisted UI payload. The payload
+ * rides the session log, so an unbounded inline would balloon every future
+ * write of the log; above the cap the client renders a summary card instead
+ * of the interactive viewer.
+ */
+const MAX_META_INLINE_BYTES = 2 * 1024 * 1024
 
 /** Extension → format. */
 const EXTENSION_FORMATS: Readonly<Record<string, MoleculeFormat>> = {
@@ -116,33 +128,49 @@ export const Config: z<Config> = z.object({
 })
 
 /**
- * Generate a short stable id for one view event. Not cryptographically
- * significant — just unique within a session.
+ * Project the UI payload for the `tool/result` event. Receives the validated
+ * call arguments plus the model-facing result value; re-reads `path` sources
+ * server-side so raw molecular content never bloats the model-facing result.
+ * Never throws — a projection failure degrades to an `ok: false` payload so
+ * the tool call itself still lands.
  */
-function newViewerEventId(): string {
-  return `mol-${randomBytes(6).toString('hex')}`
-}
-
-/**
- * Resolve the current turn/step coordinates from the owning session's event
- * log. The tool runs inside a step; the most recent step/start gives both.
- * Falls back to (0, 0) when no step context exists (e.g. a non-agent caller).
- */
-function currentCoordinates(session: { events: ReadonlyArray<{ type: string; data: unknown }> }): { turn: number; step: number } {
-  for (const event of [...session.events].reverse()) {
-    if (event.type === 'step/start') {
-      const data = event.data as { turn?: number; step?: number }
-      return { turn: data.turn ?? 0, step: data.step ?? 0 }
-    }
+function projectMeta(
+  args: ViewMoleculeArgs,
+  result: ViewMoleculeResult,
+  defaultStyle: MoleculeStyle,
+): MoleculeViewMeta {
+  const style = args.style ?? defaultStyle
+  const base: Pick<MoleculeViewMeta, 'kind' | 'format' | 'style' | 'name'> = {
+    kind: MOLECULE_META_KIND,
+    format: result.format,
+    style,
+    ...(result.name !== undefined ? { name: result.name } : {}),
   }
-  // No step/start yet — use the latest turn/start, or zero.
-  for (const event of [...session.events].reverse()) {
-    if (event.type === 'turn/start') {
-      const data = event.data as { turn?: number }
-      return { turn: data.turn ?? 0, step: 0 }
-    }
+  if (!result.ok) {
+    return { ...base, ok: false, atomCount: 0, error: result.error ?? 'parse failed' }
   }
-  return { turn: 0, step: 0 }
+  let data: string | undefined
+  let truncated = false
+  try {
+    if (args.data !== undefined) {
+      data = Buffer.byteLength(args.data, 'utf8') > MAX_META_INLINE_BYTES ? undefined : args.data
+      truncated = data === undefined
+    } else if (args.path !== undefined) {
+      // Snapshot at result time: the payload replays verbatim on every reload.
+      const read = readMoleculeFile(args.path)
+      data = Buffer.byteLength(read.data, 'utf8') > MAX_META_INLINE_BYTES ? undefined : read.data
+      truncated = data === undefined
+    }
+  } catch {
+    data = undefined
+  }
+  return {
+    ...base,
+    ok: true,
+    atomCount: result.atomCount,
+    ...(data !== undefined ? { data } : {}),
+    ...(truncated ? { truncated: true as const } : {}),
+  }
 }
 
 /**
@@ -201,7 +229,6 @@ export function apply(ctx: Context, config: Config): void {
         properties: {
           format: { type: 'string', required: true, enum: FORMATS },
           atomCount: { type: 'integer', required: true },
-          viewerEventId: { type: 'string', required: true },
           ok: { type: 'boolean', required: true },
           name: { type: 'string' },
           error: { type: 'string' },
@@ -215,15 +242,16 @@ export function apply(ctx: Context, config: Config): void {
         const label = result.name !== undefined ? ` "${result.name}"` : ''
         return [{
           type: 'text',
-          text: `Displayed${label} (${result.format}, ${result.atomCount} atoms) — interactive 3D viewer shown above.`,
+          text: `Displayed${label} (${result.format}, ${result.atomCount} atoms) — interactive 3D viewer attached to this call.`,
         }]
       },
-      // presentationMeta: carries the result back for UI replay consistency.
-      presentationMeta: (_args, value) => value,
+      // The UI payload rides the tool/result event and reaches the client's
+      // keyed tool.call.toolview renderer as block.meta — durable across reloads.
+      presentationMeta: (args, value) =>
+        projectMeta(args as ViewMoleculeArgs, value as ViewMoleculeResult, config.defaultStyle),
     },
-    async execute(args: ViewMoleculeArgs, exec) {
+    async execute(args: ViewMoleculeArgs) {
       const { data: inlineData, path: moleculePath, name: moleculeName } = args
-      const style: MoleculeStyle = args.style ?? config.defaultStyle
 
       // Exactly one source: `path` (server-side read, fast) or `data` (inline).
       if (moleculePath === undefined && inlineData === undefined) {
@@ -261,35 +289,14 @@ export function apply(ctx: Context, config: Config): void {
           ok: false,
           error: parseResult.error,
           ...(displayName !== undefined ? { name: displayName } : {}),
-          viewerEventId: newViewerEventId(),
         }
         return errorResult
       }
-
-      const viewerEventId = newViewerEventId()
-
-      // Emit the molecule/view event for the client Conversation Node.
-      // The event carries the raw data so 3Dmol.js can parse it in the browser.
-      if (exec.agent === undefined) {
-        throw new Error('view_molecule requires an owning agent session to render the 3D viewer')
-      }
-
-      const { turn, step } = currentCoordinates(exec.agent.session)
-      exec.agent.session.append('molecule/view', {
-        viewerEventId,
-        format,
-        data,
-        ...(displayName !== undefined ? { name: displayName } : {}),
-        style,
-        turn,
-        step,
-      })
 
       const result: ViewMoleculeResult = {
         format,
         atomCount: parseResult.atomCount,
         ok: true,
-        viewerEventId,
         ...(displayName !== undefined ? { name: displayName } : {}),
       }
       return result
@@ -303,8 +310,8 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentResult: (_args, result): ToolResultView | undefined => {
-      const meta = result.meta as ViewMoleculeResult | undefined
-      if (meta === undefined || !meta.ok) return undefined
+      const meta = result.meta as MoleculeViewMeta | undefined
+      if (meta?.ok !== true) return undefined
       const label = meta.name !== undefined ? ` ${meta.name}` : ''
       return {
         card: 'generic',

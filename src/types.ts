@@ -1,9 +1,11 @@
 /**
  * Shared types for the molecule viewer tool plugin.
  *
- * The `SessionEventMap` declaration merge publishes the `molecule/view`
- * event consumed by the client-half Conversation Node. Both halves import
- * these types so the wire contract stays in one place.
+ * The viewer payload travels inside the `tool/result` event's
+ * `presentationMeta` projection (a first-class harness event type that every
+ * build persists and replays), so no custom session event type is declared:
+ * out-of-repo event types are refused on load by builds that do not know
+ * them, which would break session history for downstream users.
  * @module @dsh-plugins/dsh-tool-molecule-viewer/types
  */
 
@@ -41,49 +43,44 @@ export interface ViewMoleculeResult {
   atomCount: number
   /** Optional display name. */
   name?: string
-  /**
-   * Stable id correlating the session event with the client renderer.
-   * The model sees this so it can reference the molecule in follow-up text.
-   */
-  viewerEventId: string
   /** Whether the data failed basic validation. */
   ok: boolean
   /** Diagnostic message when `ok` is false. */
   error?: string
 }
 
+/** Marker distinguishing this tool's meta from every other tool's payload. */
+export const MOLECULE_META_KIND = 'molecule-view'
+
 /**
- * Payload of the `molecule/view` session event.
- *
- * Single-event Context (start = terminal): the host emits exactly one event
- * per tool call, and the client Conversation Node matches on `viewerEventId`.
+ * UI payload persisted with the `tool/result` event via
+ * `output.presentationMeta` and delivered to the client's keyed
+ * `tool.call.toolview` renderer as `block.meta`. Snapshot semantics: the
+ * payload is projected once at result time and replayed verbatim on reload.
+ * Declared as a type alias so it stays assignable to the `JsonValue` index
+ * signature `presentationMeta` returns.
  */
-export interface MoleculeViewEventData {
-  /** Stable business id shared across the tool result and the client node. */
-  readonly viewerEventId: string
+export type MoleculeViewMeta = {
+  /** Discriminant; always {@link MOLECULE_META_KIND}. */
+  readonly kind: typeof MOLECULE_META_KIND
+  /** Whether the molecular data parsed successfully. */
+  readonly ok: boolean
   /** File format of `data`. */
   readonly format: MoleculeFormat
-  /** Raw molecular file content for 3Dmol.js to parse in the browser. */
-  readonly data: string
-  /** Optional display name. */
-  readonly name?: string
+  /** Atoms counted by the host-side parse (0 when `ok` is false). */
+  readonly atomCount: number
   /** Initial rendering style. */
   readonly style: MoleculeStyle
-  /** Turn coordinate for Conversation Node location anchoring. */
-  readonly turn: number
-  /** Step coordinate for Conversation Node location anchoring. */
-  readonly step: number
-}
-
-// Declaration merge: makes `ctx.emit('molecule/view', data)` type-safe.
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    /**
-     * One molecule view request: carries parsed molecular data and a stable id
-     * that the client Conversation Node binds to a 3Dmol.js renderer.
-     * @mode emit
-     * @param data - stable identity, molecular data, coordinates, and style.
-     */
-    'molecule/view': MoleculeViewEventData
-  }
+  /** Optional display name. */
+  readonly name?: string
+  /** Diagnostic message when `ok` is false. */
+  readonly error?: string
+  /**
+   * Raw molecular file content for 3Dmol.js to parse in the browser. Omitted
+   * when the parse failed, when the source could not be re-read, or when the
+   * content exceeds the inline cap (then `truncated` is set).
+   */
+  readonly data?: string
+  /** Set when `data` was withheld because the content exceeds the inline cap. */
+  readonly truncated?: true
 }

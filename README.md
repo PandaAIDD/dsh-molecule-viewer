@@ -1,12 +1,17 @@
 # dsh-molecule-viewer
 
+[English](README.en.md) | 简体中文
+
 DSH（DeepSeek Harness）分子结构查看器插件：传入分子文件路径或 PDB/SDF/MOL2/MOL 格式数据，在会话界面渲染**交互式 3D 分子查看器**（3Dmol.js，支持旋转/缩放/样式切换/着色）。
+
+![2AFW 蛋白质 cartoon 渲染效果](assets/fig1.png)
 
 ## 特性
 
 - 🧬 **四种格式**：PDB（蛋白质/大分子）、SDF、MOL2、MOL
 - 📁 **路径优先**：直接传文件路径，工具在服务端读取——Windows（`D:\dir\x.pdb`）、WSL（`/mnt/d/dir/x.pdb`）和 `~/` 写法都能自动识别互转
 - 🖱️ **交互式查看器**：旋转、缩放，实时切换 cartoon / stick / line / sphere 样式、背景色与分子着色
+- 🔄 **重启可恢复**：查看器载荷随 `tool/result` 事件持久化，重启加载历史后照常渲染（依赖官方插槽，原版 harness 即可安装）
 - ⚡ **轻量解析**：Host 侧只做原子计数与校验，真正的解析渲染交给浏览器端 3Dmol.js
 - 📦 **本地打包 3Dmol.js**：`vendor/3Dmol-min.cjs`（2.4.2）在构建时打进 client bundle —— 无 CDN 运行时请求，加载快、可离线、不受浏览器跟踪防护影响
 
@@ -46,6 +51,8 @@ dsh --profile web
 | MOL | `.mol` | MDL MOL（V2000/V3000） |
 
 > SMILES 暂不支持——需要含 3D 坐标的格式。
+>
+> 超过 2 MB 的分子内容不会内联进会话日志，查看器位置显示摘要卡片（原子数与格式仍然可见）。
 
 ### 工具参数
 
@@ -80,15 +87,16 @@ dsh-molecule-viewer/
 ├── src/
 │   ├── index.ts          # Host 半：注册 view_molecule 工具（path/data 双入口）
 │   ├── parser.ts         # 轻量解析器（原子计数 + 验证）
-│   ├── types.ts          # 共享类型 + SessionEventMap 声明合并
+│   ├── types.ts          # 共享类型（含 presentationMeta 载荷契约）
 │   ├── invariant.ts      # 包不变式 companion
 │   └── client/
-│       ├── index.ts      # Client 半：Conversation Node + slot renderer
+│       ├── index.ts      # Client 半：注册 tool.call.toolview key 渲染器
 │       ├── MoleculeView.tsx    # 3Dmol.js 交互式 3D 容器
-│       ├── molecule-definition.ts  # 事件匹配定义
+│       ├── contract/types.ts   # wire 契约镜像 + 运行时守卫
 │       └── threeDmol.ts  # 3Dmol.js 本地打包加载（vendor，无 CDN）
 ├── vendor/                # 本地打包的 3Dmol.js 2.4.2（.cjs — UMD 构建）
 ├── lib/                  # 构建产物（提交到仓库）
+├── assets/               # 截图等文档资源
 └── README.md
 ```
 
@@ -97,10 +105,13 @@ dsh-molecule-viewer/
 ```
 模型调用 view_molecule(path 或 data)
     ↓
-Host 半（Node.js）: 读取/接收分子 → 解析计数 → 发出 molecule/view 事件 → 返回 JSON
-    ↓
-Client 半（浏览器）: 捕获事件 → 3Dmol.js 渲染交互式 3D 视图
+Host 半（Node.js）: 读取/接收分子 → 解析计数 → presentationMeta 载荷（分子数据+样式）
+    ↓                        （随 tool/result 事件持久化 —— harness 一等公民事件类型）
+Client 半（浏览器）: block.meta 载荷 → tool.call.toolview 渲染器 → 3Dmol.js 交互式 3D 视图
 ```
+
+> **为什么不用自定义 session 事件？** 0.1.0 版本曾通过 `molecule/view` 自定义会话事件驱动客户端渲染，但 harness 的持久化读取路径会拒绝包含"未知且未标记 `ignorable` 的事件类型"的日志——而 `Session.append()` 公开 API 无法设置该标记。结果：任何安装了本插件的**原版 harness** 在重启后都无法加载含查看器调用的会话历史（`SessionFormatUnsupportedError`）。0.2.0 起改为 `presentationMeta` + `tool.call.toolview` 官方插槽：载荷随 `tool/result` 事件持久化并在重载时重放，重启后查看器照常渲染，任何原版 harness 都能安装使用。
+
 
 ## License
 

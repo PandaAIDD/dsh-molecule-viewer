@@ -1,7 +1,7 @@
 {
   "name": "@dsh-plugins/dsh-molecule-viewer",
   "description": "Interactive 3D molecule viewer for DeepSeek Harness: view PDB/SDF/MOL2/MOL structures with 3Dmol.js",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
@@ -35,12 +35,10 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
     "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/dsh-session": "*",
-    "@deepseek-ai/dsh-llm": "*",
     "@deepseek-ai/dsh-invariants": "*",
+    "@deepseek-ai/schemastery": "*",
     "@deepseek-ai/dsh-client-runtime": "*",
-    "@deepseek-ai/dsh-client-ui-conversation": "*",
-    "@deepseek-ai/schemastery": "*"
+    "@deepseek-ai/dsh-client-ui-tool": "*"
   },
   "dependencies": {
     "react": "^18.2.0"
@@ -57,7 +55,7 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-tool"
       ],
       "platform": "web"
     }
