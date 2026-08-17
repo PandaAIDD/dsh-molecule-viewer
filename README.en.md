@@ -64,54 +64,6 @@ Or be explicit:
 | `name` | `string` | no | Display name (e.g. "1CRN"), shown as the viewer title |
 | `style` | `stick \| line \| sphere \| cartoon` | no | Initial rendering style (default `stick`; `cartoon` recommended for proteins) |
 
-## Development
-
-```bash
-# Install dependencies (or reuse the DSH profile's node_modules)
-pnpm install
-
-# Build (artifacts are committed to GitHub; users installing need no build)
-pnpm run build
-
-# Type check
-pnpm run typecheck
-```
-
-### Project layout
-
-```
-dsh-molecule-viewer/
-├── package.json          # declares dsh.bundle + dsh.client
-├── cordis.patch.yml      # bundle patch: inserts the plugin row by package name
-├── tsconfig.json
-├── src/
-│   ├── index.ts          # host half: registers the view_molecule tool (path/data dual entry)
-│   ├── parser.ts         # lightweight parser (atom counting + validation)
-│   ├── types.ts          # shared types (incl. the presentationMeta payload contract)
-│   ├── invariant.ts      # package-invariant companion
-│   └── client/
-│       ├── index.ts      # client half: registers the tool.call.toolview keyed renderer
-│       ├── MoleculeView.tsx    # interactive 3Dmol.js container
-│       ├── contract/types.ts   # wire-contract mirror + runtime guard
-│       └── threeDmol.ts  # locally bundled 3Dmol.js loader (vendor, no CDN)
-├── vendor/                # bundled 3Dmol.js 2.4.2 (.cjs — UMD build)
-├── lib/                  # build artifacts (committed to the repo)
-├── assets/               # screenshots and doc resources
-└── README.md
-```
-
-### Architecture
-
-```
-Model calls view_molecule(path or data)
-    ↓
-Host half (Node.js): read/receive molecule → parse & count → presentationMeta payload (data + style)
-    ↓                        (persisted with the tool/result event — a first-class harness event type)
-Client half (browser): block.meta payload → tool.call.toolview renderer → interactive 3Dmol.js view
-```
-
-> **Why no custom session events?** Version 0.1.0 drove the client via a custom `molecule/view` session event, but the harness's persistence read path refuses logs containing event types that are "unknown and not marked `ignorable`" — and the public `Session.append()` API cannot set that marker. The result: on any **stock harness**, sessions containing viewer calls could not be reloaded after a restart (`SessionFormatUnsupportedError`). As of 0.2.0 the plugin uses the `presentationMeta` + `tool.call.toolview` official slots instead: the payload persists with the `tool/result` event and replays on reload, so viewers keep rendering after restarts and the plugin installs on any stock harness.
-
 ## License
 
 MIT

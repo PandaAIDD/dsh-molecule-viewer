@@ -64,55 +64,6 @@ dsh --profile web
 | `name` | `string` | 否 | 显示名称（如 "1CRN"），作为查看器标题 |
 | `style` | `stick \| line \| sphere \| cartoon` | 否 | 初始渲染样式（默认 `stick`；蛋白质建议 `cartoon`） |
 
-## 开发
-
-```bash
-# 安装依赖（或复用 DSH profile 的 node_modules）
-pnpm install
-
-# 构建（产物提交到 GitHub，用户安装时无需构建）
-pnpm run build
-
-# 类型检查
-pnpm run typecheck
-```
-
-### 项目结构
-
-```
-dsh-molecule-viewer/
-├── package.json          # 声明 dsh.bundle + dsh.client
-├── cordis.patch.yml      # bundle 补丁：按包名插入插件行
-├── tsconfig.json
-├── src/
-│   ├── index.ts          # Host 半：注册 view_molecule 工具（path/data 双入口）
-│   ├── parser.ts         # 轻量解析器（原子计数 + 验证）
-│   ├── types.ts          # 共享类型（含 presentationMeta 载荷契约）
-│   ├── invariant.ts      # 包不变式 companion
-│   └── client/
-│       ├── index.ts      # Client 半：注册 tool.call.toolview key 渲染器
-│       ├── MoleculeView.tsx    # 3Dmol.js 交互式 3D 容器
-│       ├── contract/types.ts   # wire 契约镜像 + 运行时守卫
-│       └── threeDmol.ts  # 3Dmol.js 本地打包加载（vendor，无 CDN）
-├── vendor/                # 本地打包的 3Dmol.js 2.4.2（.cjs — UMD 构建）
-├── lib/                  # 构建产物（提交到仓库）
-├── assets/               # 截图等文档资源
-└── README.md
-```
-
-### 架构
-
-```
-模型调用 view_molecule(path 或 data)
-    ↓
-Host 半（Node.js）: 读取/接收分子 → 解析计数 → presentationMeta 载荷（分子数据+样式）
-    ↓                        （随 tool/result 事件持久化 —— harness 一等公民事件类型）
-Client 半（浏览器）: block.meta 载荷 → tool.call.toolview 渲染器 → 3Dmol.js 交互式 3D 视图
-```
-
-> **为什么不用自定义 session 事件？** 0.1.0 版本曾通过 `molecule/view` 自定义会话事件驱动客户端渲染，但 harness 的持久化读取路径会拒绝包含"未知且未标记 `ignorable` 的事件类型"的日志——而 `Session.append()` 公开 API 无法设置该标记。结果：任何安装了本插件的**原版 harness** 在重启后都无法加载含查看器调用的会话历史（`SessionFormatUnsupportedError`）。0.2.0 起改为 `presentationMeta` + `tool.call.toolview` 官方插槽：载荷随 `tool/result` 事件持久化并在重载时重放，重启后查看器照常渲染，任何原版 harness 都能安装使用。
-
-
 ## License
 
 MIT
